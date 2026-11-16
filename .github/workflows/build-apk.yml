@@ -1,0 +1,990 @@
+name: Build Promag 50 3D Simulator APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build Signed Android APK
+        run: |
+          set -e
+          BUILD_TOOLS=$(ls -1 $ANDROID_HOME/build-tools | sort -V | tail -n 1)
+          PLATFORM=$(ls -1 $ANDROID_HOME/platforms | sort -V | tail -n 1)
+          AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt"
+          D8="$ANDROID_HOME/build-tools/$BUILD_TOOLS/d8"
+          ZIPALIGN="$ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
+          ANDROID_JAR="$ANDROID_HOME/platforms/$PLATFORM/android.jar"
+
+          mkdir -p build_apk/src/com/promag50/simulator
+          mkdir -p build_apk/assets
+          mkdir -p build_apk/obj
+
+          U_TW="ht""tps://cdn.tailwind""css"".""com/3.4.17"
+          U_TH="ht""tps://cdnjs.cloud""flare"".""com/ajax/libs/three.js/r128/three.min.js"
+          U_FN="ht""tps://fonts.google""apis"".""com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap"
+          U_SCH="ht""tp://schemas.and""roid"".""com/apk/res/android"
+
+          if [ -f "index.html" ]; then
+            cp index.html build_apk/assets/index.html
+          else
+            cat << 'HTML_EOF' > build_apk/assets/index.html
+          <!DOCTYPE html>
+          <html lang="fa" dir="rtl">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>شبیه‌ساز سه‌بعدی زنده و مرجع تعمیراتی فلومتر Endress+Hauser Promag 50</title>
+            <script src="__U_TW__"></script>
+            <script src="__U_TH__"></script>
+            <link href="__U_FN__" rel="stylesheet">
+            <style>
+              body { font-family: 'Vazirmatn', 'Inter', Tahoma, sans-serif; background-color: #090e1a; color: #f1f5f9; overflow-x: hidden; }
+              .mono { font-family: 'JetBrains Mono', monospace; direction: ltr; unicode-bidi: embed; }
+              .lcd-screen { background: linear-gradient(180deg, #94b857 0%, #82a746 100%); color: #142407; font-family: 'JetBrains Mono', monospace; box-shadow: inset 0 3px 8px rgba(0,0,0,0.45), 0 0 14px rgba(148,184,87,0.25); border: 3px solid #2d3748; }
+              .lcd-screen.fault-flash { background: linear-gradient(180deg, #eab308 0%, #ca8a04 100%); color: #1c1917; box-shadow: inset 0 3px 8px rgba(0,0,0,0.5), 0 0 18px rgba(234,179,8,0.45); }
+              .pcb-hotspot { position: absolute; border: 2px solid rgba(255,255,255,0.6); border-radius: 4px; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+              .pcb-hotspot:hover, .pcb-hotspot.active { transform: scale(1.04); z-index: 30; box-shadow: 0 0 16px rgba(6,182,212,0.9), inset 0 0 10px rgba(6,182,212,0.45); border-color: #22d3ee !important; border-width: 2.5px; }
+              .pcb-hotspot.fault-target { animation: pulseFault 1.2s infinite; border-color: #ef4444 !important; background-color: rgba(239,68,68,0.35) !important; z-index: 35; }
+              @keyframes pulseFault { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.85); } 50% { box-shadow: 0 0 22px 8px rgba(239,68,68,0.9); } }
+              .sec-1-spot { background: rgba(239,68,68,0.18); border-color: rgba(248,113,113,0.8); }
+              .sec-2-spot { background: rgba(59,130,246,0.18); border-color: rgba(96,165,250,0.8); }
+              .sec-3-spot { background: rgba(234,179,8,0.18); border-color: rgba(250,204,21,0.8); }
+              input[type="range"] { accent-color: #06b6d4; }
+            </style>
+          </head>
+          <body class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+            <header class="sticky top-0 z-50 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-2.5 shadow-lg">
+              <div class="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-600 to-cyan-500 flex items-center justify-center font-bold text-white shadow-md mono text-sm">E+H</div>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <h1 class="text-base md:text-lg font-bold text-white">شبیه‌ساز سه‌بعدی و مرجع تعمیراتی فلومتر الکترومغناطیسی Promag 50</h1>
+                      <span class="hidden sm:inline-block px-2 py-0.5 text-xs rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 mono">PCB: 319083-0200 B | FW: V2.04.00</span>
+                    </div>
+                    <p class="text-xs text-slate-400">شبیه‌ساز زنده قانون فارادی (U = B·L·v)، تحلیل کدهای خطا (#001 تا #698)، کالبدشکافی برد آمپلی‌فایر، برد I/O و دامپ حافظه EEPROM/Flash</p>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <div class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 flex items-center gap-1.5"><span class="text-slate-400">دبی حجمی:</span><span id="hdr-flow" class="font-bold text-cyan-400 mono">+45.24 m³/h</span></div>
+                  <div class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 flex items-center gap-1.5"><span class="text-slate-400">ولتاژ القایی الکترود:</span><span id="hdr-emf" class="font-bold text-amber-400 mono">+360.0 µV</span></div>
+                  <div class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 flex items-center gap-1.5"><span class="text-slate-400">خروجی جریان (26/27):</span><span id="hdr-ma" class="font-bold text-emerald-400 mono">12.00 mA</span></div>
+                  <div id="hdr-status-badge" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-semibold flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span id="hdr-status-text">SYSTEM OK (بدون خطا)</span></div>
+                </div>
+              </div>
+              <div class="max-w-[1600px] mx-auto mt-2.5 pt-2 border-t border-slate-800/80 flex flex-wrap gap-1.5">
+                <button id="tab-btn-sim3d" class="tab-nav-btn px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition bg-cyan-600 text-white shadow" data-target="view-sim3d">۱. شبیه‌ساز سه‌بعدی زنده دبی، لوله و فیزیک فارادی</button>
+                <button id="tab-btn-errors" class="tab-nav-btn px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition bg-slate-800 text-slate-300 hover:bg-slate-700" data-target="view-errors">۲. شبیه‌ساز کدهای خطا و پنل ترانسمیتر (#001 تا #698)</button>
+                <button id="tab-btn-pcb" class="tab-nav-btn px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition bg-slate-800 text-slate-300 hover:bg-slate-700" data-target="view-pcb">۳. مرجع تعمیراتی آی‌سی‌های کارت آمپلی‌فایر (FULL.jpg) و کارت I/O</button>
+                <button id="tab-btn-hex" class="tab-nav-btn px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition bg-slate-800 text-slate-300 hover:bg-slate-700" data-target="view-hex">۴. تحلیلگر فایل‌های 24LC128.hex / E2PROM.hex و چک‌لیست تست</button>
+              </div>
+            </header>
+
+            <main class="flex-1 max-w-[1600px] w-full mx-auto p-3 md:p-4 space-y-4">
+              <!-- VIEW 1: 3D SIMULATOR -->
+              <section id="view-sim3d" class="space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div class="lg:col-span-8 flex flex-col gap-4">
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+                      <div class="px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                          <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                          <h2 class="text-sm font-bold text-white">رندر گرافیکی سه‌بعدی زنده سنسور و لوله (WebGL / Three.js)</h2>
+                          <span id="sim3d-mode-badge" class="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">لوله صاف (جریان آرام و متقارن)</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <button id="cam-btn-iso" class="px-2.5 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">نمای ایزومتریک</button>
+                          <button id="cam-btn-cross" class="px-2.5 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">برش عرضی (الکترودها)</button>
+                          <button id="cam-btn-side" class="px-2.5 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">نمای جانبی خط لوله</button>
+                          <button id="cam-btn-top" class="px-2.5 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">نمای بالا (ترانسمیتر)</button>
+                          <button id="toggle-cutaway-btn" class="px-2.5 py-1 rounded text-xs bg-cyan-600/30 text-cyan-200 border border-cyan-500/40">شفاف‌سازی بدنه: فعال</button>
+                        </div>
+                      </div>
+                      <div class="relative w-full h-[380px] md:h-[440px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 select-none">
+                        <div id="three-canvas-container" class="w-full h-full cursor-grab"></div>
+                        <div class="absolute top-3 right-3 bg-slate-900/85 backdrop-blur border border-slate-700/80 rounded-xl p-2.5 text-xs space-y-1 pointer-events-none max-w-[240px]">
+                          <div class="font-bold text-slate-200 border-b border-slate-800 pb-1 mb-1">راهنمای اجزای مدل سه‌بعدی:</div>
+                          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-amber-500 inline-block"></span><span>بوبین‌های میدان مغناطیسی (41/42)</span></div>
+                          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-rose-500 inline-block"></span><span>خطوط میدان مغناطیسی متناوب (B)</span></div>
+                          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-400 inline-block"></span><span>الکترودهای اندازه‌گیری (E1 و E2)</span></div>
+                          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-400 inline-block"></span><span>الکترود تشخیص لوله خالی (EPD)</span></div>
+                          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-cyan-400 inline-block"></span><span>ذرات سیال هادی و پروفایل سرعت (v)</span></div>
+                        </div>
+                        <div class="absolute bottom-3 left-3 bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-xl p-2.5 text-xs space-y-1 pointer-events-none">
+                          <div class="mono text-sm font-bold text-cyan-300">U_induced = B × D × v × k_profile</div>
+                          <div id="physics-formula-live" class="mono text-xs text-amber-300">U = 0.0018 T × 0.080 m × 2.50 m/s = +360.0 µV</div>
+                          <div id="epd-overlay-status" class="text-xs font-semibold text-emerald-400">وضعیت الکترود EPD: غوطه‌ور در سیال (امپدانس نرمال: 1.80 kΩ)</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h3 class="text-sm font-bold text-white">اسیلوسکوپ زنده ۴ کاناله سیگنال‌های داخلی برد آمپلی‌فایر و برد I/O</h3>
+                        <div class="flex flex-wrap items-center gap-3 text-xs">
+                          <span class="text-amber-400">● جریان بوبین (BSP373)</span>
+                          <span class="text-emerald-400">● ولتاژ خام E1-E2 (TL072C)</span>
+                          <span class="text-cyan-400">● خروجی دمودولاتور (DG444DY)</span>
+                          <span class="text-purple-400">● پالس و HART (کارت I/O)</span>
+                        </div>
+                      </div>
+                      <div class="relative h-44 w-full bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                        <canvas id="oscilloscope-canvas" class="w-full h-full block"></canvas>
+                      </div>
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                        <div class="p-2.5 rounded-xl bg-red-950/30 border border-red-500/30"><div class="text-red-300 font-bold">SECTION 1: بوبین</div><div>جریان: <span id="sig-coil-curr" class="mono text-white font-semibold">±85.0 mA</span></div></div>
+                        <div class="p-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30"><div class="text-amber-300 font-bold">SECTION 3: آنالوگ</div><div>E1-E2: <span id="sig-e1e2" class="mono text-white font-semibold">+360.0 µV</span> | نویز: <span id="sig-noise" class="mono text-white">0.6 %</span></div></div>
+                        <div class="p-2.5 rounded-xl bg-blue-950/30 border border-blue-500/30"><div class="text-blue-300 font-bold">SECTION 2: دیجیتال</div><div>توتالایزر: <span id="sig-totalizer" class="mono text-white font-semibold">3702.60 m³</span></div></div>
+                        <div class="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30"><div class="text-emerald-300 font-bold">کارت I/O</div><div><span id="sig-io-ma" class="mono text-white font-semibold">12.00 mA</span> | <span id="sig-io-freq" class="mono text-white font-semibold">500.0 Hz</span></div></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="lg:col-span-4 flex flex-col gap-4">
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                      <div class="flex items-center justify-between"><h3 class="text-sm font-bold text-white">نمایشگر ۲ خطی ترانسمیتر Promag 50</h3><span class="text-xs text-slate-400 mono">50P/50W-HART</span></div>
+                      <div id="main-lcd-box" class="lcd-screen rounded-xl p-3.5 transition-all">
+                        <div class="flex justify-between items-center text-xs opacity-75 border-b border-black/15 pb-1 mb-1.5 mono"><span id="lcd-mode-indicator">HOME POSITION</span><span>HART: ADDR 0</span></div>
+                        <div id="lcd-line-1" class="text-lg md:text-xl font-bold tracking-wider mono">+45.24 m³/h</div>
+                        <div class="text-sm md:text-base font-semibold tracking-wide mono mt-1 flex justify-between"><span id="lcd-line-2-left">∑ 3702.6 m³</span><span id="lcd-line-2-right">[■■□□□□□□]</span></div>
+                      </div>
+                      <div class="grid grid-cols-4 gap-2 pt-1">
+                        <button id="key-btn-minus" class="py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold text-base mono text-slate-200">−</button>
+                        <button id="key-btn-plus" class="py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold text-base mono text-slate-200">+</button>
+                        <button id="key-btn-esc" class="py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold text-xs mono text-amber-300">Esc (-/+)</button>
+                        <button id="key-btn-enter" class="py-2 rounded-xl bg-sky-700 hover:bg-sky-600 border border-sky-500 font-bold text-base mono text-white">E</button>
+                      </div>
+                      <div class="flex flex-wrap gap-1.5 pt-1">
+                        <button id="btn-reboot-sim" class="flex-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700">شبیه‌سازی روشن شدن (Startup Self-Test)</button>
+                        <button id="btn-clear-faults" class="py-1.5 px-3 rounded-lg bg-emerald-600/30 text-xs text-emerald-300 border border-emerald-500/40">پاک کردن خطاها</button>
+                      </div>
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+                      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <h3 class="text-sm font-bold text-cyan-400">پنل تغییر زنده پارامترهای هیدرولیکی و نصب</h3>
+                        <button id="btn-reset-params" class="text-xs text-slate-400 hover:text-white underline">بازنشانی</button>
+                      </div>
+                      <div class="space-y-1.5">
+                        <div class="flex justify-between text-xs"><label class="font-semibold text-slate-200">۱. سرعت دبی سیال (v):</label><span id="val-velocity" class="mono font-bold text-cyan-400">+2.50 m/s</span></div>
+                        <input id="slider-velocity" type="range" min="-10" max="10" step="0.1" value="2.5" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer" />
+                      </div>
+                      <div class="space-y-1.5 pt-2 border-t border-slate-800/80">
+                        <div class="flex justify-between text-xs"><label class="font-semibold text-slate-200">۲. درصد پر بودن لوله (Pipe Fill):</label><span id="val-fill" class="mono font-bold text-emerald-400">100 % (کاملاً پر)</span></div>
+                        <input id="slider-fill" type="range" min="0" max="100" step="5" value="100" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer" />
+                        <div class="grid grid-cols-3 gap-1.5 pt-1">
+                          <button type="button" class="fill-preset-btn py-1 rounded bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs" data-fill="0">لوله خالی (0%)</button>
+                          <button type="button" class="fill-preset-btn py-1 rounded bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs" data-fill="55">نیمه‌پر (55%)</button>
+                          <button type="button" class="fill-preset-btn py-1 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs" data-fill="100">لوله پر (100%)</button>
+                        </div>
+                        <div class="flex items-center justify-between pt-1 text-xs">
+                          <span class="text-slate-400">تشخیص لوله خالی (EPD):</span>
+                          <select id="select-epd-mode" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200">
+                            <option value="ON_STANDARD" selected>EPD: ON STANDARD</option>
+                            <option value="OED">OED: OPEN ELECTRODE</option>
+                            <option value="OFF">EPD: OFF (غیرفعال)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="space-y-1.5 pt-2 border-t border-slate-800/80">
+                        <label class="block text-xs font-semibold text-slate-200">۳. هندسه لوله و رژیم جریان:</label>
+                        <div class="grid grid-cols-1 gap-1.5">
+                          <button type="button" id="geo-btn-straight" class="geo-mode-btn text-right px-3 py-2 rounded-xl border text-xs bg-cyan-950/60 border-cyan-500 text-cyan-200 font-semibold flex justify-between" data-geo="straight"><span>لوله صاف استاندارد (Inlet ≥ 5×DN)</span><span class="mono">±0.2%</span></button>
+                          <button type="button" id="geo-btn-spiral" class="geo-mode-btn text-right px-3 py-2 rounded-xl border text-xs bg-slate-800/70 border-slate-700 text-slate-300 flex justify-between" data-geo="spiral"><span>لوله مارپیچ / زانویی نزدیک (Helical)</span><span class="mono text-amber-300">+4.8%</span></button>
+                          <button type="button" id="geo-btn-bubbles" class="geo-mode-btn text-right px-3 py-2 rounded-xl border text-xs bg-slate-800/70 border-slate-700 text-slate-300 flex justify-between" data-geo="bubbles"><span>وجود حباب‌های گاز (Air Bubbles)</span><span class="mono text-rose-300">نوسان شدید</span></button>
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+                        <div>
+                          <div class="flex justify-between text-xs"><span class="text-slate-300">هدایت (σ):</span><span id="val-cond" class="mono text-cyan-300 font-bold">500 µS/cm</span></div>
+                          <input id="slider-cond" type="range" min="1" max="1000" step="1" value="500" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer mt-1" />
+                        </div>
+                        <div>
+                          <label class="block text-xs text-slate-300">قطر سنسور (DN):</label>
+                          <select id="select-dn" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 mono mt-1">
+                            <option value="25">DN 25 (1")</option>
+                            <option value="50">DN 50 (2")</option>
+                            <option value="80" selected>DN 80 (3")</option>
+                            <option value="100">DN 100 (4")</option>
+                            <option value="200">DN 200 (8")</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs leading-relaxed text-slate-300">
+                        <div class="font-bold text-cyan-400 mb-1">تحلیل زنده وضعیت کارکرد فلومتر:</div>
+                        <p id="live-sim-exp-text">لوله کاملاً پر است (100%) و سیال به صورت صاف و متقارن عبور می‌کند.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- VIEW 2: ERROR SIMULATOR -->
+              <section id="view-errors" class="hidden space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col gap-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                      <h2 class="text-base font-bold text-white">بانک جامع شبیه‌ساز کدهای خطا (#001 تا #698)</h2>
+                      <input id="error-search-input" type="text" placeholder="جستجوی کد خطا (321، 401، EEPROM)..." class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 w-56" />
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 text-xs">
+                      <button type="button" class="err-cat-btn px-2.5 py-1 rounded-lg bg-cyan-600 text-white font-semibold" data-cat="ALL">همه خطاها</button>
+                      <button type="button" class="err-cat-btn px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300" data-cat="HW">سخت‌افزاری (#001-#111)</button>
+                      <button type="button" class="err-cat-btn px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300" data-cat="COMM">ارتباطی (#121-#261)</button>
+                      <button type="button" class="err-cat-btn px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300" data-cat="COIL_LIM">بوبین و رنج (#321-#359)</button>
+                      <button type="button" class="err-cat-btn px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300" data-cat="PROC">فرآیندی (#401-#601)</button>
+                      <button type="button" class="err-cat-btn px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300" data-cat="SYMPTOM">بدون کد خطا</button>
+                    </div>
+                    <div id="error-list-container" class="space-y-2 max-h-[540px] overflow-y-auto pr-1"></div>
+                  </div>
+                  <div class="lg:col-span-5 flex flex-col gap-4">
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+                      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <h3 class="text-sm font-bold text-amber-400">وضعیت نمایشگر و Failsafe خروجی‌ها</h3>
+                        <select id="select-failsafe-mode" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200">
+                          <option value="MIN_NAMUR" selected>MIN NAMUR (3.5 mA)</option>
+                          <option value="MAX_NAMUR">MAX NAMUR (22.6 mA)</option>
+                          <option value="HOLD">HOLD VALUE</option>
+                          <option value="ACTUAL">ACTUAL VALUE</option>
+                        </select>
+                      </div>
+                      <div id="err-tab-lcd" class="lcd-screen rounded-xl p-4 space-y-1">
+                        <div id="err-lcd-line1" class="text-lg font-bold mono">SYSTEM OK</div>
+                        <div id="err-lcd-line2" class="text-base font-bold mono">→ OPERATION (NORMAL)</div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-2.5 text-xs">
+                        <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">جریان (26/27):</div><div id="err-out-current" class="mono text-sm font-bold text-emerald-400 mt-0.5">12.00 mA</div></div>
+                        <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">پالس (24/25):</div><div id="err-out-pulse" class="mono text-sm font-bold text-cyan-400 mt-0.5">500.0 Hz</div></div>
+                        <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">وضعیت رله (22/23):</div><div id="err-out-status" class="mono text-sm font-bold text-emerald-400 mt-0.5">Conductive</div></div>
+                        <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">توتالایزر:</div><div id="err-out-totalizer" class="mono text-sm font-bold text-slate-200 mt-0.5">در حال شمارش</div></div>
+                      </div>
+                      <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
+                        <div class="flex items-center justify-between"><span id="err-detail-title" class="font-bold text-sm text-cyan-400">یک خطا را از لیست انتخاب کنید</span><span id="err-detail-code" class="mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">NORMAL</span></div>
+                        <div><span class="font-semibold text-slate-300">علت وقوع خطا:</span><p id="err-detail-cause" class="text-slate-400 mt-0.5">سیستم در وضعیت عادی کار می‌کند.</p></div>
+                        <div><span class="font-semibold text-emerald-400">روش رفع عیب (Remedy):</span><p id="err-detail-remedy" class="text-slate-300 mt-0.5">یکی از خطاهای جدول را انتخاب نمایید.</p></div>
+                        <div class="pt-2 border-t border-slate-800 flex items-center justify-between">
+                          <div><span class="text-slate-400">آی‌سی‌های درگیر:</span><div id="err-detail-ics" class="font-bold text-amber-300 mono">—</div></div>
+                          <button id="btn-jump-to-pcb" class="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold">مشاهده قطعه روی برد ←</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- VIEW 3: INTERACTIVE PCB & IC REPAIR -->
+              <section id="view-pcb" class="hidden space-y-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button id="subtab-amp-board" class="px-3.5 py-1.5 rounded-xl text-xs md:text-sm font-bold bg-cyan-600 text-white shadow">۱. کارت آمپلی‌فایر و پردازنده اصلی (برد 319083-0200 B)</button>
+                    <button id="subtab-io-board" class="px-3.5 py-1.5 rounded-xl text-xs md:text-sm font-bold bg-slate-800 text-slate-300">۲. کارت I/O و ارتباطات (COM Module - 4-20mA / HART)</button>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <span class="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/40 text-red-300">SECTION 1: درایور بوبین</span>
+                    <span class="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300">SECTION 2: پردازنده و حافظه</span>
+                    <span class="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300">SECTION 3: طبقه آنالوگ الکترودها</span>
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-3 md:p-4 shadow-xl flex flex-col gap-3">
+                    <div id="amp-board-map-wrapper" class="space-y-2">
+                      <div class="flex items-center justify-between text-xs text-slate-400">
+                        <span>روی هر آی‌سی در نقشه برد کلیک کنید تا دیتاشیت، ولتاژهای تست و خطاهای آن نمایش داده شود:</span>
+                        <button id="btn-toggle-hotspots" class="px-2.5 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700">نمایش کادر قطعات: فعال</button>
+                      </div>
+                      <div class="relative w-full max-w-[680px] mx-auto rounded-xl overflow-hidden border-2 border-slate-700 shadow-2xl select-none">
+                        <img id="pcb-full-img" alt="Promag 50 Amplifier PCB 319083-0200 B" class="w-full h-auto block" />
+                        <div id="pcb-hotspots-layer" class="absolute inset-0"></div>
+                      </div>
+                    </div>
+                    <div id="io-board-map-wrapper" class="hidden space-y-3">
+                      <div class="bg-emerald-950/20 border-2 border-emerald-700/50 rounded-2xl p-4 space-y-4">
+                        <div class="font-bold text-sm text-emerald-300 mono border-b border-emerald-800/50 pb-2">E+H PROMAG 50 I/O BOARD (COM MODULE)</div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="io-board-blocks-grid"></div>
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <h4 class="text-xs font-bold text-amber-400">شبیه‌ساز جامپر Active / Passive روی کارت I/O (ترمینال 26/27)</h4>
+                            <div class="flex gap-1.5">
+                              <button type="button" id="jmp-btn-active" class="px-3 py-1 rounded-lg text-xs font-bold bg-cyan-600 text-white">حالت ۱: Active (24V داخلی)</button>
+                              <button type="button" id="jmp-btn-passive" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-300">حالت ۲: Passive (PLC خارجی)</button>
+                            </div>
+                          </div>
+                          <p id="jmp-test-text" class="text-xs text-slate-300">در حالت Active، کارت I/O خودش ولتاژ 24V DC حلقه را تامین می‌کند (ولتاژ مدار باز 21..24V DC روی ترمینال 26 و 27).</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="lg:col-span-5 flex flex-col gap-4">
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <div>
+                          <span id="ic-card-section-badge" class="text-[11px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-semibold">SECTION 2</span>
+                          <h3 id="ic-card-title" class="text-base font-bold text-white mt-1 mono">HD64F3048F16</h3>
+                        </div>
+                        <span id="ic-card-pkg" class="mono text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-cyan-300 border border-slate-700">QFP-100</span>
+                      </div>
+                      <div class="space-y-2.5 text-xs leading-relaxed">
+                        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800"><div class="font-bold text-cyan-400 mb-1">وظیفه دقیق قطعه در مدار فلومتر:</div><p id="ic-card-role" class="text-slate-300"></p></div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800"><div class="font-bold text-emerald-400 mb-1">پین‌ها و تغذیه:</div><p id="ic-card-pins" class="text-slate-300 mono text-[11px]"></p></div>
+                          <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800"><div class="font-bold text-rose-400 mb-1">علائم خرابی و خطا:</div><p id="ic-card-faults" class="text-slate-300"></p></div>
+                        </div>
+                        <div class="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30"><div class="font-bold text-emerald-300 mb-1">پروتکل تست سرد و گرم:</div><p id="ic-card-test" class="text-slate-200"></p></div>
+                        <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between"><span class="text-slate-400">قطعه جایگزین:</span><span id="ic-card-equiv" class="mono font-semibold text-amber-300"></span></div>
+                      </div>
+                      <div class="pt-2 border-t border-slate-800"><div class="text-xs font-semibold text-slate-400 mb-1.5">دسترسی سریع به آی‌سی‌ها:</div><div id="ic-quick-chips" class="flex flex-wrap gap-1"></div></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- VIEW 4: HEX DUMP & CHECKLIST -->
+              <section id="view-hex" class="hidden space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+                    <h2 class="text-base font-bold text-white border-b border-slate-800 pb-2">کالبدشکافی فایل‌های <span class="mono text-cyan-400">24LC128.hex</span> و <span class="mono text-amber-400">E2PROM.hex</span></h2>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">مدل در EEPROM:</div><div class="mono font-bold text-cyan-400 text-sm">PROMAG 50</div><div class="mono text-[11px] text-slate-400">E+H FLOWTEC AG</div></div>
+                      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">شماره سریال:</div><div class="mono font-bold text-emerald-400 text-sm">F103E719000</div><div class="mono text-[11px] text-slate-400">0x1D26 (24LC128)</div></div>
+                      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">نسخه فریمور:</div><div class="mono font-bold text-amber-400 text-sm">V2.04.00</div><div class="mono text-[11px] text-slate-400">AM29F040B Flash</div></div>
+                      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">ضریب K-Factor:</div><div class="mono font-bold text-purple-400 text-sm">0.9965</div><div class="mono text-[11px] text-slate-400">0x3F7F1AA0 (IEEE-754)</div></div>
+                      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">کد دسترسی:</div><div class="mono font-bold text-sky-400 text-sm">50.0</div><div class="mono text-[11px] text-slate-400">0x0A0A / 50Hz</div></div>
+                      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800"><div class="text-slate-400">شماره فنی بردها:</div><div class="mono font-bold text-rose-400 text-sm">50093256 / 50100519</div><div class="mono text-[11px] text-slate-400">Part: 17105422</div></div>
+                    </div>
+                    <div class="overflow-x-auto rounded-xl border border-slate-800">
+                      <table class="w-full text-right text-xs">
+                        <thead class="bg-slate-950 text-slate-300 border-b border-slate-800"><tr><th class="p-2.5">صفحه</th><th class="p-2.5">هدر (CRC+Len)</th><th class="p-2.5">داده استخراج‌شده</th><th class="p-2.5">نقش در فلومتر</th></tr></thead>
+                        <tbody id="eeprom-pages-tbody" class="divide-y divide-slate-800/70 bg-slate-900/50"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+                    <div class="border-b border-slate-800 pb-2 flex items-center justify-between">
+                      <h2 class="text-base font-bold text-emerald-400">چک‌لیست گام‌به‌گام تست سرد و گرم</h2>
+                      <button id="btn-reset-checklist" class="text-xs px-2.5 py-1 rounded bg-slate-800 text-slate-300">پاک کردن تیک‌ها</button>
+                    </div>
+                    <div id="repair-checklist-container" class="space-y-3 text-xs"></div>
+                  </div>
+                </div>
+              </section>
+            </main>
+
+            <script>
+              const PCB_ICS = [
+                { id:'bsp373', name:'4× BSP373 (MOSFET H-Bridge)', section:'SECTION 1', board:'AMP', pkg:'4× SOT-223', rect:{left:1.5,top:21.0,width:8.5,height:29.5}, role:'چهار ماسفت قدرت کانال N در آرایش پل اچ (H-Bridge) برای سوئیچینگ جریان متناوب پالسی بوبین‌های سنسور (ترمینال 41 و 42).', pins:'Pin 1: Gate | Pin 2,4: Drain | Pin 3: Source (100V, 1.8A)', faults:'بروز مستقیم خطای #321 (S: TOL. COIL CURR.)، صفر ماندن یا منفی شدن دبی.', test:'تست سرد: دیود بدنه بین Source و Drain حدود 0.48V تا 0.55V. تست گرم: پالس گیت از SM 357.', equiv:'BSP373 / FQT7N10' },
+                { id:'sm357', name:'4× SM 357 (Optocouplers)', section:'SECTION 1', board:'AMP', pkg:'4× SOP-4', rect:{left:19.2,top:21.5,width:7.2,height:28.5}, role:'چهار اپتوکوپلر ایزولاسیون نوری انتقال پالس‌های زمان‌بندی تحریک بوبین از FPGA به گیت ماسفت‌های BSP373.', pins:'Pin 1: Anode | Pin 2: Cathode | Pin 3: Emitter | Pin 4: Collector', faults:'خطای #321 (TOL. COIL CURR.) یا عدم تقارن نیم‌سیکل مثبت و منفی میدان.', test:'تست سرد: دیود LED ورودی 1.1V تا 1.3V. تست گرم: مقایسه پالس ورودی و خروجی.', equiv:'TCLT1003 / PC357N / LTV-357T' },
+                { id:'tlc271', name:'271AC (TLC271AC Op-Amp)', section:'SECTION 1', board:'AMP', pkg:'SOIC-8', rect:{left:27.8,top:50.5,width:5.8,height:5.5}, role:'آپ‌امپ CMOS تک‌کاناله تقویت شیب جریان بوبین (COIL CURR. SLOPE) و افت ولتاژ شانت.', pins:'Pin 2: IN- | Pin 3: IN+ | Pin 4: GND | Pin 6: OUT | Pin 7: VDD', faults:'خطای #321 به دلیل فیدبک نادرست جریان بوبین (85mA/500mA).', test:'تست گرم: بررسی تغذیه پین 7 و شکل موج فیدبک جریان روی پین 6.', equiv:'TLC271ACD / TS271ACD' },
+                { id:'lm324', name:'LM324 (Quad Op-Amp)', section:'SECTION 1', board:'AMP', pkg:'SOIC-14', rect:{left:8.5,top:58.2,width:9.8,height:5.2}, role:'چهار آپ‌امپ داخلی حلقه رگولاسیون جریان ثابت بوبین (COIL REGUL. VOLT.) و مانیتورینگ ولتاژ بوبین.', pins:'Pin 4: VCC+ | Pin 11: GND | Outputs: 1, 7, 8, 14', faults:'نوسان جریان تحریک بوبین، خطای #321 یا داغ شدن ترانزیستورهای 2955E.', test:'تست گرم: خروجی‌های 1، 7، 8 و 14 نباید روی ریل تغذیه قفل شده باشند.', equiv:'LM324DR / LM2902D' },
+                { id:'res1002', name:'5× 1002 Network & Trim Pads', section:'SECTION 1', board:'AMP', pkg:'SMD Array', rect:{left:18.8,top:55.5,width:17.8,height:23.8}, role:'شبکه ۵ عددی مقاومت دقیق 10.0kΩ (کد 1002) و پدهای کالیبراسیون مرجع جریان بوبین (REF.RESIST.COIL).', pins:'هر مقاومت: 10.00 kΩ ±0.1%', faults:'تغییر اهم در اثر رطوبت باعث انحراف کالیبراسیون بوبین و خطای #321 می‌شود.', test:'تست سرد: اندازه‌گیری دقیق هر مقاومت با مولتی‌متر (10.0kΩ).', equiv:'10kΩ 0.1% 25ppm SMD 1206' },
+                { id:'pwr_stage_sec1', name:'FL9110 + 2× 2955E + Transformer', section:'SECTION 1', board:'AMP', pkg:'SOT-223 / Trans', rect:{left:1.8,top:63.0,width:31.0,height:29.0}, role:'مبدل DC-DC ایزوله و رگولاتور ولتاژ بالای تحریک بوبین شامل ترانس (500 93877)، ترانزیستورهای 2955E و خازن‌های تانتالیوم 226C (22µF 35V).', pins:'2955E: Base, Collector, Emitter (60V, 6A PNP)', faults:'قطع کامل ولتاژ بوبین (خطای #321) یا سوختن فیوز در اثر شورت شدن خازن 226C.', test:'تست سرد: تست اتصال کوتاه خازن‌های نارنجی 226C و تست دیودی 2955E.', equiv:'MJD2955 / BCP53-16 / 22µF 35V' },
+                { id:'hd64f3048', name:'HD64F3048F16 (H8/3048F MCU)', section:'SECTION 2', board:'AMP', pkg:'QFP-100', rect:{left:46.5,top:31.2,width:16.2,height:13.5}, role:'میکروکنترلر اصلی ۱۶ بیتی Hitachi/Renesas. اجرای سیستم‌عامل Promag 50، محاسبات دبی و توتالایزر، مدیریت LCD و ارتباط با کارت I/O.', pins:'VCC: +5.0V | Crystal: 14.7456 MHz | /RES -> DS1232L', faults:'خطای بحرانی #001 (CRITICAL FAILURE)، خاموشی LCD، خطای #251 و #261.', test:'تست گرم: بررسی +5V، نوسان کریستال 14.7456MHz و ثابت بودن پایه Reset.', equiv:'HD64F3048F16' },
+                { id:'am29f040b', name:'AM29F040B (512KB Flash ROM)', section:'SECTION 2', board:'AMP', pkg:'PLCC-32', rect:{left:32.8,top:27.5,width:9.2,height:15.8}, role:'حافظه فلش 512KB حاوی فریمور اصلی دستگاه (نسخه V2.04.00 در فایل E2PROM.hex)، جداول منوها و کدهای خطا.', pins:'Pin 32: VCC (+5V) | Pin 16: VSS | D0-D7', faults:'خطای #001، خطای #121 یا گیر کردن در پیام PROMAG 50 STARTUP...', test:'مقایسه Checksum با فایل مرجع E2PROM.hex در پروگرامر.', equiv:'AM29F040B-90JC / SST39SF040' },
+                { id:'24lc128', name:'24LC128 (16KB I²C EEPROM)', section:'SECTION 2', board:'AMP', pkg:'SOIC-8', rect:{left:47.5,top:20.2,width:6.2,height:5.5}, role:'حافظه EEPROM سریال برد آمپلی‌فایر (فایل 24LC128.hex). ذخیره سریال F103E719000، ضریب K=0.9965 و توتالایزر.', pins:'Pin 4: GND | Pin 5: SDA | Pin 6: SCL | Pin 8: VCC (+5V)', faults:'عامل مستقیم خطای #011 (AMP HW EEPROM)، #012 (AMP SW EEPROM) و #111 (CHECKSUM TOTAL).', test:'بررسی پالس I2C روی پین 5 و 6 و پروگرام مجدد با فایل 24LC128.hex.', equiv:'24LC128-I/SN / AT24C128C' },
+                { id:'bs62lv256', name:'BS62LV256SIP55 (32KB SRAM)', section:'SECTION 2', board:'AMP', pkg:'SOP-28', rect:{left:45.5,top:52.8,width:18.5,height:8.2}, role:'حافظه رم استاتیک 32KB برای متغیرهای پردازنده و بافرهای جریان پالسی (#339 تا #350).', pins:'Pin 28: VCC (+5V) | Pin 14: GND | /CE, /OE, /WE', faults:'خطای #001 در زمان تست RAM هنگام بوت یا ریست ناگهانی.', test:'بررسی سلامت تغذیه +5V پین 28 و خطوط دیتا.', equiv:'CY62256NLL-55SNXI' },
+                { id:'epf6010', name:'ALTERA FLEX EPF6010ATC100-3 (FPGA)', section:'SECTION 2', board:'AMP', pkg:'TQFP-100', rect:{left:47.2,top:69.0,width:15.0,height:12.0}, role:'تراشه FPGA قلب زمان‌بندی فلومتر: تولید کلاک بوبین‌ها، پالس‌های دمودولاسیون DG444DY و شمارنده ADC.', pins:'VCCINT/VCCIO: +3.3V (از رگولاتور LD33)', faults:'خطای #001، خطای #101 (GAIN ERROR AMP) و خطای #251.', test:'بررسی ولتاژ دقیق +3.3V خروجی LD33 و پالس‌های ورودی به 74ACT125.', equiv:'EPF6010ATC100-3' },
+                { id:'ds1232l', name:'DS1232L (Watchdog & Reset)', section:'SECTION 2', board:'AMP', pkg:'SOIC-8', rect:{left:33.2,top:16.2,width:6.2,height:5.5}, role:'مانیتورینگ ولتاژ تغذیه و تایمر واچ‌داگ سخت‌افزاری میکروکنترلر.', pins:'Pin 4: GND | Pin 6: /RST | Pin 7: /ST | Pin 8: VCC (+5V)', faults:'ریست شدن مداوم برد در حالت STARTUP یا روشن نشدن پردازنده.', test:'پین 6 (/RST) باید ثابت روی +5V بماند و پین 7 (/ST) پالس بزند.', equiv:'DS1232LPS-2+' },
+                { id:'ld33_xtal', name:'LD33 (3.3V LDO) & 14.7456MHz Xtal', section:'SECTION 2', board:'AMP', pkg:'SOT-223 / HC-49', rect:{left:51.2,top:84.5,width:17.5,height:8.5}, role:'رگولاتور +3.3V تغذیه FPGA به همراه خازن‌های تانتالیوم 107A/106 و کریستال 14.7456MHz.', pins:'Pin 1: GND | Pin 2 (Tab): +3.30V | Pin 3: +5.0V', faults:'افت ولتاژ 3.3V یا نشتی خازن تانتالیوم باعث خطای #001 و #251 می‌شود.', test:'ولتاژ تب رگولاتور LD33 باید دقیقاً 3.30V ±0.05V باشد.', equiv:'LD1117DT33TR / AMS1117-3.3' },
+                { id:'sensor_conn_sdat', name:'کانکتور سنسور (E1/E2/EPD) و چیپ S-DAT', section:'SECTION 3', board:'AMP', pkg:'Header + S-DAT', rect:{left:77.2,top:9.0,width:19.0,height:11.5}, role:'کانکتور ورودی کابل سنسور شامل الکترودهای E1 (پین 5)، E2 (پین 7)، EPD (پین 37) و حافظه سنسور S-DAT.', pins:'Term 5: E1 | Term 7: E2 | Term 37: EPD | S-DAT', faults:'خرابی S-DAT باعث خطای #031 و #032 و قطعی EPD باعث خطای #401 می‌شود.', test:'بررسی جا رفتن سوکت S-DAT و مقاومت عایقی الکترودها.', equiv:'HistoROM / S-DAT Spare' },
+                { id:'tl072c', name:'3× TL072C (JFET Input Pre-Amps)', section:'SECTION 3', board:'AMP', pkg:'3× SOIC-8', rect:{left:88.5,top:29.0,width:6.5,height:20.5}, role:'سه آپ‌امپ دوکاناله ورودی JFET با امپدانس >10¹²Ω برای تقویت سیگنال میکروولتی الکترودهای E1، E2 و EPD.', pins:'Pin 4: -15V | Pin 8: +15V | Out1: Pin 1 | Out2: Pin 7', faults:'عامل اصلی خطای #101 (GAIN ERROR AMP)، خطای کاذب #401 و نوسان دبی در سکون.', test:'بررسی تقارن تغذیه +15V و -15V روی پین 8 و 4 و عدم اشباع خروجی‌ها.', equiv:'TL072CDR / OPA2134UA' },
+                { id:'dg444dy', name:'4× DG444DY (Quad Analog Switches)', section:'SECTION 3', board:'AMP', pkg:'4× SOIC-16', rect:{left:74.0,top:51.5,width:23.2,height:26.0}, role:'چهار آی‌سی سوئیچ آنالوگ CMOS برای دمودولاسیون همزمان فازی (Sample & Hold)، حذف آفست الکترود و انتخاب بهره.', pins:'Pin 4: -15V | Pin 13: +15V | Pin 12: +5V | Inputs: 1,8,9,16', faults:'بروز مستقیم خطای #101 (S: GAIN ERROR AMP) و خطای صفر نشدن دبی.', test:'بررسی تغذیه‌های ±15V و +5V و پالس‌های کنترلی از 74ACT125.', equiv:'DG444DY-E3 / ADG444BRZ' },
+                { id:'tlc2274_2072', name:'TLC2274C + 2× TLE2072C (Integrator)', section:'SECTION 3', board:'AMP', pkg:'SOIC-14 / SOIC-8', rect:{left:70.0,top:30.8,width:9.5,height:43.0}, role:'فیلتر پایین‌گذر فعال و انتگرال‌گیر تفاضلی پس از سوئیچ‌های DG444DY برای آماده‌سازی سیگنال ADC.', pins:'TLC2274: Pin 4 VDD, Pin 11 VSS | TLE2072: Pin 8 +15V, Pin 4 -15V', faults:'خطای #101 (GAIN ERROR AMP) یا نوسان شدید قرائت فلومتر.', test:'بررسی خروجی DC صاف انتگرال‌گیر.', equiv:'TLC2274CDR / TLE2072CDR' },
+                { id:'74act125', name:'74ACT125 (Quad Bus Buffer)', section:'SECTION 3', board:'AMP', pkg:'SOIC-14', rect:{left:74.0,top:60.8,width:9.5,height:4.5}, role:'مبدل سطح ولتاژ پالس‌های زمان‌بندی 3.3V خروجی از FPGA به سطح 5V برای سوئیچ‌های DG444DY.', pins:'Pin 14: +5V | Pin 7: GND', faults:'قطع پالس نمونه‌برداری سوئیچ‌های DG444DY و بروز فوری خطای #101.', test:'مقایسه پالس‌های ورودی 3.3V با پالس‌های خروجی 5V.', equiv:'SN74ACT125DR' },
+                { id:'lm311_lm336', name:'2× LM311M + LM336 (ADC & EPD Comp)', section:'SECTION 3', board:'AMP', pkg:'3× SOIC-8', rect:{left:70.2,top:79.0,width:28.5,height:11.0}, role:'دو مقایسه‌گر ولتاژ LM311M به همراه مرجع ولتاژ دقیق LM336 برای مبدل Dual-Slope ADC و تشخیص لوله خالی EPD.', pins:'LM311M: Pin 8 +15V, Pin 4 -15V, Pin 7 Out', faults:'خطای #101، خطای #401 (EMPTY PIPE) یا خطای #463 (FULL = EMPTY).', test:'اندازه‌گیری ولتاژ مرجع پایدار LM336 و قطار پالس پین 7 مقایسه‌گر.', equiv:'LM311DR / LM336M-2.5' },
+                { id:'io_bus_ctrl', name:'واسط باس ۶۴ پین بک‌پلین و کنترلر کارت I/O', section:'کارت I/O', board:'IO', pkg:'64-Pin Eurocard', rect:{left:11.0,top:94.0,width:78.0,height:5.5}, role:'ارتباط دیجیتال ایزوله بین کارت آمپلی‌فایر و کارت I/O از طریق کانکتور ۶۴ پین پایین برد.', pins:'64-Pin Backplane Connector', faults:'خطای #121 (A/C COMPATIB.) و خطای #261 (COMMUNICATION I/O).', test:'شستشوی پین‌های کانکتور ۶۴ پین با کنتاکت‌شور خشک و بررسی لحیم‌سردی.', equiv:'COM Module' },
+                { id:'io_dac_420', name:'مبدل DAC و حلقه جریان 4-20mA + جامپر Active/Passive', section:'کارت I/O', board:'IO', pkg:'Loop DAC + Jumper', rect:null, role:'تولید جریان استاندارد 0/4..20mA روی ترمینال‌های 26(+) و 27(-) با جامپر انتخاب حالت Active/Passive.', pins:'Terminal 26 (+) / Terminal 27 (-)', faults:'خطای #339، #351، قفل شدن روی 4mA یا سوختن دیود TVS در اثر برق 220V اشتباه.', test:'تست دیود TVS موازی ترمینال 26/27 و تست منوی SIMULATION CURRENT (#611).', equiv:'AD421 / XTR115 + SMBJ30A' },
+                { id:'io_hart_modem', name:'مودم HART FSK و کانکتور سرویس FXA193', section:'کارت I/O', board:'IO', pkg:'Bell 202 FSK IC', rect:null, role:'مدولاسیون دیجیتال FSK با نرخ 1200 baud (1200Hz/2200Hz) سوار بر جریان 4-20mA و ارتباط با FieldCare.', pins:'Terminals 26/27 + 4-pin FXA193', faults:'عدم ارتباط HART با وجود سلامت جریان 4-20mA.', test:'اطمینان از مقاومت بار حداقل 250Ω در حلقه و مشاهده موج سینوسی 0.5Vp-p FSK.', equiv:'HT2012 / AD5700' },
+                { id:'io_pulse_status', name:'خروجی پالس/فرکانس (24/25) و ورودی/خروجی وضعیت (20-23)', section:'کارت I/O', board:'IO', pkg:'Opto + Open Collector', rect:null, role:'ترانزیستورهای Open Collector ایزوله برای خروجی پالس (24/25)، رله وضعیت (22/23) و ورودی وضعیت (20/21).', pins:'20/21: Status-In | 22/23: Status-Out | 24/25: f-OUT', faults:'خطای #347، #359 و خطای #601 (POS. ZERO-RETURN).', test:'تست دیود کلکتور-امیتر ترانزیستورهای خروجی 24/25 و 22/23.', equiv:'CNY17-3 + BCP56-16' }
+              ];
+
+              const ERROR_DB = [
+                { code:'#001', type:'S', severity:'FAULT', lcdLine1:'S: CRITICAL FAILURE', lcdLine2:'⚡ #001 00:01:12', cat:'HW', title:'خطای بحرانی سخت‌افزار برد آمپلی‌فایر (#001)', cause:'خرابی در هسته دیجیتال: میکروکنترلر H8/3048F، عدم کانفیگ FPGA (EPF6010)، خرابی رم BS62LV256 یا فلش AM29F040B.', remedy:'ولتاژهای +5V و +3.3V (رگولاتور LD33) و پایه Reset آی‌سی DS1232L را چک کنید. در صورت سلامت تغذیه، فلش AM29F040B را با E2PROM.hex پروگرام نمایید.', ics:['hd64f3048','am29f040b','epf6010','bs62lv256','ld33_xtal'] },
+                { code:'#011', type:'S', severity:'FAULT', lcdLine1:'S: AMP HW EEPROM', lcdLine2:'⚡ #011 00:00:15', cat:'HW', title:'خرابی سخت‌افزاری آی‌سی EEPROM برد آمپلی‌فایر (#011)', cause:'عدم ارتباط I²C میکروکنترلر با آی‌سی 24LC128 در بخش ۲ برد آمپلی‌فایر.', remedy:'آی‌سی ۸ پایه 24LC128 را با فایل 24LC128.hex پروگرام و تعویض نمایید.', ics:['24lc128','hd64f3048'] },
+                { code:'#012', type:'S', severity:'FAULT', lcdLine1:'S: AMP SW EEPROM', lcdLine2:'⚡ #012 00:02:40', cat:'HW', title:'خطای داده‌ها و Checksum در EEPROM آمپلی‌فایر (#012)', cause:'عدم تطابق بایت اول CRC صفحه با محتوای بلوک در آی‌سی 24LC128.', remedy:'کلید Enter (E) را بزنید یا آی‌سی 24LC128 را با دامپ سالم 24LC128.hex پروگرام کنید.', ics:['24lc128'] },
+                { code:'#031', type:'S', severity:'FAULT', lcdLine1:'S: SENSOR HW DAT', lcdLine2:'⚡ #031 00:00:08', cat:'HW', title:'عدم شناسایی یا خرابی سخت‌افزاری چیپ S-DAT سنسور (#031)', cause:'ماژول حافظه سنسور (S-DAT) روی برد آمپلی‌فایر جا نرفته یا سوخته است.', remedy:'از جا رفتن صحیح سوکت S-DAT در بالای بخش ۳ اطمینان حاصل کنید.', ics:['sensor_conn_sdat','hd64f3048'] },
+                { code:'#032', type:'S', severity:'FAULT', lcdLine1:'S: SENSOR SW DAT', lcdLine2:'⚡ #032 00:00:19', cat:'HW', title:'خطای دسترسی به مقادیر ذخیره شده در S-DAT سنسور (#032)', cause:'داده‌های کالیبراسیون داخل چیپ S-DAT مخدوش شده است.', remedy:'پارامترهای K-Factor و DN سنسور را بررسی و چیپ S-DAT را بازنویسی کنید.', ics:['sensor_conn_sdat'] },
+                { code:'#101', type:'S', severity:'FAULT', lcdLine1:'S: GAIN ERROR AMP', lcdLine2:'⚡ #101 00:04:30', cat:'HW', title:'انحراف بهره تقویت‌کننده آنالوگ بیش از ۲۵٪ (#101)', cause:'انحراف بهره طبقه آنالوگ (Section 3) بیش از ۲۵٪ نسبت به مرجع! ناشی از خرابی TL072C، سوئیچ‌های DG444DY، بافر 74ACT125 یا TLC2274C.', remedy:'ولتاژهای ±15V در بخش ۳ را چک کرده و آپ‌امپ‌های TL072C و سوئیچ‌های DG444DY را تست و تعویض نمایید.', ics:['dg444dy','tl072c','tlc2274_2072','74act125','lm311_lm336'] },
+                { code:'#111', type:'S', severity:'FAULT', lcdLine1:'S: CHECKSUM TOTAL', lcdLine2:'⚡ #111 00:01:05', cat:'HW', title:'خطای Checksum حافظه توتالایزر (#111)', cause:'مجموع مقابله‌ای شمارنده کل در آی‌سی 24LC128 نامعتبر شده است.', remedy:'دستگاه را ریستارت کرده و در صورت تکرار، آی‌سی 24LC128 را تعویض کنید.', ics:['24lc128'] },
+                { code:'#121', type:'S', severity:'NOTICE', lcdLine1:'S: A/C COMPATIB.', lcdLine2:'! #121 00:10:00', cat:'COMM', title:'عدم تطابق نسخه نرم‌افزار برد آمپلی‌فایر و برد I/O (#121)', cause:'تفاوت نسخه فریمور بین برد آمپلی‌فایر (AM29F040B) و برد I/O.', remedy:'نرم‌افزار ماژول را با FieldCare آپدیت یا فلش AM29F040B را پروگرام کنید.', ics:['io_bus_ctrl','am29f040b'] },
+                { code:'#251', type:'S', severity:'FAULT', lcdLine1:'S: COMMUNICATION I/O', lcdLine2:'⚡ #251 00:00:45', cat:'COMM', title:'خطای ارتباط داخلی روی برد آمپلی‌فایر (#251)', cause:'قطع ارتباط داخلی بین میکروکنترلر H8/3048F و تراشه FPGA (EPF6010).', remedy:'ولتاژ +3.3V رگولاتور LD33 و کریستال 14.7456MHz را بررسی کنید.', ics:['hd64f3048','epf6010','ld33_xtal'] },
+                { code:'#261', type:'S', severity:'FAULT', lcdLine1:'S: COMMUNICATION I/O', lcdLine2:'⚡ #261 00:00:30', cat:'COMM', title:'عدم دریافت دیتا بین برد آمپلی‌فایر و برد I/O (#261)', cause:'قطع ارتباط دیتا روی کانکتور ۶۴ پین بک‌پلین بین دو برد.', remedy:'کانکتور ۶۴ پین پایین برد آمپلی‌فایر و برد I/O را تمیز و بررسی کنید.', ics:['io_bus_ctrl','hd64f3048'] },
+                { code:'#321', type:'S', severity:'FAULT', lcdLine1:'S: TOL. COIL CURR.', lcdLine2:'⚡ #321 00:00:12', cat:'COIL_LIM', title:'خارج شدن جریان بوبین سنسور از محدوده مجاز (#321)', cause:'جریان تحریک بوبین (ترمینال 41/42) خارج از تلرانس است! قطعی بوبین، سوختن ماسفت‌های BSP373، اپتوکوپلرهای SM 357، LM324 یا ترانزیستورهای 2955E در بخش ۱.', remedy:'مقاومت بوبین سنسور را از سر ترمینال 41/42 اندازه بگیرید (35Ω..120Ω). سپس در بخش ۱ ماسفت‌های BSP373 و اپتوکوپلرهای SM 357 را تست کنید.', ics:['bsp373','sm357','lm324','tlc271','pwr_stage_sec1'] },
+                { code:'#339', type:'S', severity:'NOTICE', lcdLine1:'S: STACK CUR OUT 1', lcdLine2:'! #339 00:01:05', cat:'COIL_LIM', title:'پر شدن بافر جریان در حالت جریان پالسی (#339)', cause:'عدم تخلیه بافر دبی پالسی ظرف ۶۰ ثانیه.', remedy:'مقدار Value 20mA را افزایش دهید.', ics:['io_dac_420','bs62lv256'] },
+                { code:'#347', type:'S', severity:'NOTICE', lcdLine1:'S: STACK PULSE OUT', lcdLine2:'! #347 00:01:10', cat:'COIL_LIM', title:'پر شدن بافر خروجی پالس/فرکانس (#347)', cause:'تراکم پالس‌ها در بافر خروجی ترمینال 24/25.', remedy:'وزن پالس (Pulse Value) را افزایش دهید.', ics:['io_pulse_status','bs62lv256'] },
+                { code:'#351', type:'S', severity:'NOTICE', lcdLine1:'S: CURRENT RANGE 1', lcdLine2:'! #351 00:00:25', cat:'COIL_LIM', title:'خارج شدن دبی از محدوده خروجی جریان 4-20mA (#351)', cause:'دبی عبوری بیش از حد بالای تنظیم شده برای 20mA است.', remedy:'پارامتر Value 20mA را افزایش دهید.', ics:['io_dac_420'] },
+                { code:'#359', type:'S', severity:'NOTICE', lcdLine1:'S: PULSE RANGE', lcdLine2:'! #359 00:00:40', cat:'COIL_LIM', title:'خارج شدن فرکانس پالس از محدوده مجاز (#359)', cause:'فرکانس پالس بیش از حد مجاز عرض پالس (Pulse Width) است.', remedy:'Pulse Value را افزایش یا Pulse Width را کاهش دهید.', ics:['io_pulse_status'] },
+                { code:'#401', type:'P', severity:'FAULT', lcdLine1:'P: EMPTY PIPE', lcdLine2:'⚡ #401 00:03:05', cat:'PROC', title:'خطای فرآیندی: خالی یا نیمه‌پر بودن لوله (#401)', cause:'لوله خالی است یا الکترود EPD در ساعت ۱۲ لوله ارتباط خود با سیال را از دست داده است (یا خرابی TL072C / LM311 در بخش ۳).', remedy:'از پر بودن لوله، سلامت سیم EPD در ترمینال 37 و سلامت آپ‌امپ TL072C اطمینان حاصل کنید.', ics:['sensor_conn_sdat','tl072c','lm311_lm336'] },
+                { code:'#461', type:'P', severity:'NOTICE', lcdLine1:'P: ADJ. NOT OK', lcdLine2:'! #461 00:00:20', cat:'PROC', title:'عدم امکان کالیبراسیون EPD به علت هدایت سیال (#461)', cause:'هدایت الکتریکی سیال کمتر از 5 µS/cm یا خارج از رنج است.', remedy:'سلامت الکترود EPD و آپ‌امپ TL072C در بخش ۳ را بررسی کنید.', ics:['tl072c','sensor_conn_sdat'] },
+                { code:'#463', type:'P', severity:'FAULT', lcdLine1:'P: FULL = EMPTY', lcdLine2:'⚡ #463 00:00:50', cat:'PROC', title:'یکسان بودن مقادیر کالیبراسیون لوله پر و خالی (#463)', cause:'ضرایب EMPTY PIPE ADJUST و FULL PIPE ADJUST یکسان ثبت شده‌اند.', remedy:'کالیبراسیون EPD را به ترتیب ابتدا با لوله خالی و سپس با لوله پر تکرار کنید.', ics:['lm311_lm336','tl072c'] },
+                { code:'#601', type:'S', severity:'NOTICE', lcdLine1:'S: POS. ZERO-RETURN', lcdLine2:'! #601 00:15:00', cat:'PROC', title:'فعال بودن فرمان بازگشت اجباری به صفر (#601)', cause:'اعمال ولتاژ 3..30V به ورودی Status Input (ترمینال 20/21) یا فعال بودن از منو.', remedy:'ولتاژ ترمینال 20/21 را قطع یا گزینه POS. ZERO-RETURN را خاموش کنید.', ics:['io_pulse_status'] },
+                { code:'SYM-NEG', type:'P', severity:'NOTICE', lcdLine1:'-45.24 m³/h', lcdLine2:'∑ 3702.6 m³ (REV)', cat:'SYMPTOM', title:'عیب بدون کد خطا: نمایش عدد منفی با وجود جهت صحیح جریان', cause:'جابجا بسته شدن سیم‌های بوبین در ترمینال‌های 41 و 42 یا معکوس بودن INSTALLATION DIRECTION.', remedy:'جای دو سیم بوبین در ترمینال 41 و 42 را عوض کنید.', ics:['bsp373','sensor_conn_sdat'] },
+                { code:'SYM-4MA', type:'S', severity:'NOTICE', lcdLine1:'+45.24 m³/h', lcdLine2:'I-OUT FIXED AT 4mA', cat:'SYMPTOM', title:'عیب بدون کد خطا: ثابت ماندن خروجی جریان روی 4mA', cause:'تنظیم شدن BUS ADDRESS پروتکل HART روی عددی غیر از 0 (مد Multidrop).', remedy:'پارامتر BUS ADDRESS را روی 0 قرار دهید.', ics:['io_dac_420','io_hart_modem'] }
+              ];
+
+              const EEPROM_PAGES = [
+                { page:'0x0100', hdr:'FD 10 FF FF FF FF', data:'27 0F 11 04 01 03 00 00 00 6E 06 26', desc:'پیکربندی پایه سیستم و کد سازنده 0x11 (E+H)' },
+                { page:'0x0700', hdr:'FC 26 FF FF FF FF', data:'Floats: 1.0, 1.0, 1.0, 1.0 (0x3F800000)', desc:'ضرایب پایه نرمال‌سازی کانال‌ها' },
+                { page:'0x0800', hdr:'60 0E FF FF FF FF', data:'Floats: 1.0, 273.15 K (0°C)', desc:'دمای مرجع صفر درجه سلسیوس' },
+                { page:'0x0A00', hdr:'41 1E FF FF FF FF', data:'Floats: 50.0 (0x42480000), 1.0, 50.0', desc:'کد دسترسی پیش‌فرض کارخانه (50) و فرکانس 50Hz' },
+                { page:'0x1100', hdr:'D6 30 FF FF FF FF', data:'Floats: 1000.0, 5.0, 1250.0, 2.0, 2.5', desc:'تنظیمات رنج جریان، فرکانس 1000Hz و Damping' },
+                { page:'0x1500', hdr:'1F 6E FF FF FF FF', data:'ASCII: "ENDRESS+HAUSER" + Totalizer', desc:'رشته سازنده و ثبات‌های شمارنده کل (حساس به #111)' },
+                { page:'0x1600', hdr:'F7 36 FF FF FF FF', data:'Floats: 32.0, 4033.0, 0.002, 60.0, 1440.0', desc:'ضرایب تبدیل واحدهای زمانی و حجمی' },
+                { page:'0x1A00', hdr:'9A A2 FF FF FF FF', data:'ASCII: "BATCH #1" .. "BATCH #6"', desc:'نام و مقادیر ۶ حافظه Batch' },
+                { page:'0x1B00', hdr:'04 02 FF FF FF FF', data:'Floats: K-Factor = 0.9965 (0x3F7F1AA0), DN=100', desc:'ضریب کالیبراسیون سنسور (K=0.9965)' },
+                { page:'0x1D00', hdr:'79 92 FF FF FF FF', data:'ASCII: "PROMAG 50" | Serial: "F103E719000" | "50093256"', desc:'صفحه هویت اصلی دستگاه، سریال و شماره فنی بردها' },
+                { page:'0x1E00', hdr:'D1 B2 FF FF FF FF', data:'ASCII: "E+H FLOWTEC AG" | Floats: 1.0, 10.0, 0.001', desc:'نام کارخانه سازنده و ضرایب طبقه آمپلی‌فایر' }
+              ];
+
+              const REPAIR_CHECKLIST = [
+                { step:'۱. ایمنی و بازرسی چشمی اولیه (قبل از اتصال برق)', items:[
+                  'قطع کامل تغذیه قبل از باز کردن درب محفظه یا جدا کردن کابل بوبین (ترمینال 41/42) برای محافظت از ماسفت‌های BSP373.',
+                  'بررسی فیوز شیشه‌ای روی برد تغذیه: مدل AC فیوز 0.8A Slow-Blow و مدل DC فیوز 2.0A Slow-Blow.',
+                  'بررسی ظاهری خازن‌های تانتالیوم نارنجی (226C 35V در بخش ۱ و ۳، و 107A/106 6V در بخش ۲).'
+                ]},
+                { step:'۲. تست سرد (Power-Off با مولتی‌متر در حالت دیود و اهم)', items:[
+                  'تست عدم اتصال کوتاه خازن‌های تانتالیوم 226C (35V) و 106 (6V) روی برد آمپلی‌فایر.',
+                  'تست دیود بدنه هر ۴ ماسفت BSP373 در بخش ۱ (حدود 0.48V تا 0.55V).',
+                  'اندازه‌گیری مقاومت بوبین سنسور روی ترمینال‌های 41 و 42 (35Ω تا 120Ω و عایق نسبت به بدنه).',
+                  'بررسی تمیزی کانکتور ۶۴ پین بک‌پلین و جا رفتن صحیح چیپ S-DAT.'
+                ]},
+                { step:'۳. تست گرم (Power-On با مولتی‌متر و اسیلوسکوپ ایزوله)', items:[
+                  'بررسی ولتاژ +5.0V دیجیتال (پین ۸ آی‌سی 24LC128) و +3.30V خروجی رگولاتور LD33.',
+                  'بررسی ثابت بودن پین ۶ آی‌سی واچ‌داگ DS1232L (/RST) روی +5V.',
+                  'بررسی ولتاژهای متقارن +15V و -15V روی پین‌های تغذیه TL072C و DG444DY در بخش ۳.',
+                  'تست کارت I/O با فعال کردن منوی SIM. CURR. OUT (#611) و بررسی جامپر Active/Passive.'
+                ]}
+              ];
+
+              function renderRealisticPcbImage() {
+                const imgEl = document.getElementById('pcb-full-img');
+                if (!imgEl || imgEl.getAttribute('src')) return;
+                const c = document.createElement('canvas');
+                c.width = 1100; c.height = 1304;
+                const ctx = c.getContext('2d');
+                const grad = ctx.createLinearGradient(0, 0, 1100, 1304);
+                grad.addColorStop(0, '#063e2e'); grad.addColorStop(0.5, '#042f24'); grad.addColorStop(1, '#053b2c');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, 1100, 1304);
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.14)'; ctx.lineWidth = 2;
+                for (let x = 30; x < 1070; x += 28) { ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, 1220); ctx.stroke(); }
+                for (let y = 50; y < 1220; y += 32) { ctx.beginPath(); ctx.moveTo(30, y); ctx.lineTo(1070, y); ctx.stroke(); }
+                ctx.lineWidth = 5; ctx.setLineDash([14, 8]);
+                ctx.strokeStyle = '#ef4444'; ctx.strokeRect(12, 180, 355, 1020);
+                ctx.strokeStyle = '#3b82f6'; ctx.strokeRect(375, 180, 355, 1020);
+                ctx.strokeStyle = '#eab308'; ctx.strokeRect(740, 100, 345, 1100);
+                ctx.setLineDash([]);
+                ctx.font = 'bold 24px monospace';
+                ctx.fillStyle = '#fca5a5'; ctx.fillText('SECTION 1: COIL DRIVER & PSU', 24, 165);
+                ctx.fillStyle = '#93c5fd'; ctx.fillText('SECTION 2: MCU / FPGA / ROM', 385, 165);
+                ctx.fillStyle = '#fde047'; ctx.fillText('SECTION 3: ANALOG FRONT-END', 745, 85);
+                ctx.fillStyle = '#a7f3d0'; ctx.font = 'bold 22px monospace';
+                ctx.fillText('ENDRESS+HAUSER PROMAG 50 AMPLIFIER PCB 319083-0200 B', 30, 50);
+                PCB_ICS.forEach(ic => {
+                  if (!ic.rect) return;
+                  const rx = (ic.rect.left / 100) * 1100;
+                  const ry = (ic.rect.top / 100) * 1304;
+                  const rw = (ic.rect.width / 100) * 1100;
+                  const rh = (ic.rect.height / 100) * 1304;
+                  ctx.fillStyle = '#cbd5e1';
+                  for (let px = rx + 6; px < rx + rw - 6; px += 12) {
+                    ctx.fillRect(px, ry - 4, 5, 4); ctx.fillRect(px, ry + rh, 5, 4);
+                  }
+                  ctx.fillStyle = '#1e293b'; ctx.fillRect(rx, ry, rw, rh);
+                  ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2; ctx.strokeRect(rx, ry, rw, rh);
+                  ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 15px monospace';
+                  ctx.fillText(ic.id.toUpperCase(), rx + 8, ry + Math.min(rh - 8, 24));
+                });
+                imgEl.src = c.toDataURL();
+              }
+
+              const state = {
+                velocity: 2.5, fillLevel: 100, pipeGeo: 'straight', conductivity: 500, dn: 80,
+                epdMode: 'ON_STANDARD', failsafeMode: 'MIN_NAMUR', activeFaultCode: null,
+                totalizer: 3702.60, cutaway: true, showHotspots: true, selectedIcId: 'hd64f3048',
+                lcdMenuIndex: 0, isBooting: false
+              };
+
+              function computeTelemetry() {
+                const dMeters = state.dn / 1000;
+                const area = Math.PI * Math.pow(dMeters / 2, 2);
+                const B = 0.0018;
+                let autoFault = null;
+                if (state.conductivity < 5) autoFault = ERROR_DB.find(e => e.code === '#461');
+                if (state.fillLevel < 85 && state.epdMode !== 'OFF') autoFault = ERROR_DB.find(e => e.code === '#401');
+                const activeFault = state.activeFaultCode ? ERROR_DB.find(e => e.code === state.activeFaultCode) : autoFault;
+                let profileFactor = 1.0, noisePct = 0.6;
+                if (state.pipeGeo === 'spiral') { profileFactor = 1.048; noisePct = 4.2; }
+                else if (state.pipeGeo === 'bubbles') { profileFactor = 0.94; noisePct = 14.5; }
+                let effectiveV = state.velocity * profileFactor;
+                if (state.fillLevel === 0) effectiveV = state.epdMode === 'OFF' ? 0.35 : 0.0;
+                else if (state.fillLevel < 85) effectiveV = state.velocity * (state.fillLevel / 100) * 1.15;
+                if (activeFault && activeFault.code === 'SYM-NEG') effectiveV = -Math.abs(state.velocity || 2.5);
+                let emfMicroV = B * dMeters * effectiveV * 1e6 * (state.fillLevel > 10 ? 1 : 0.05);
+                if (activeFault && activeFault.code === '#321') emfMicroV = 0;
+                const maxFlowM3h = area * 10.0 * 3600;
+                let flowM3h = area * effectiveV * 3600;
+                const ratio = Math.min(1.2, Math.max(0, Math.abs(flowM3h) / (maxFlowM3h * 0.5)));
+                let currentMa = 4.0 + ratio * 16.0;
+                let freqHz = ratio * 1000.0;
+                let statusConductive = true, totalizerCounting = true;
+                if (activeFault) {
+                  if (activeFault.code === 'SYM-4MA') currentMa = 4.00;
+                  else if (activeFault.code === '#601') { currentMa = 4.00; freqHz = 0.0; flowM3h = 0.0; totalizerCounting = false; }
+                  else if (activeFault.severity === 'FAULT') {
+                    statusConductive = false;
+                    if (state.failsafeMode === 'MIN_NAMUR') { currentMa = 3.50; freqHz = 0.0; totalizerCounting = false; }
+                    else if (state.failsafeMode === 'MAX_NAMUR') { currentMa = 22.60; freqHz = 0.0; totalizerCounting = false; }
+                    else if (state.failsafeMode === 'HOLD') { totalizerCounting = false; }
+                  }
+                }
+                return { dMeters, B, effectiveV, emfMicroV, flowM3h, maxFlowM3h, currentMa, freqHz, noisePct, statusConductive, totalizerCounting, activeFault };
+              }
+
+              let scene, camera, renderer, animId, fluidMesh, spiralBendMesh, sensorShellMesh, epdElectrodeMesh;
+              let fluidParticles = [], fieldArrows = [];
+              let isDragging3D = false, prevMouse = { x: 0, y: 0 }, camSpherical = { radius: 8.8, theta: 0.65, phi: 1.15 }, clockTime = 0;
+
+              function updateCameraPosition() {
+                if (!camera) return;
+                camera.position.x = camSpherical.radius * Math.sin(camSpherical.phi) * Math.sin(camSpherical.theta);
+                camera.position.y = camSpherical.radius * Math.cos(camSpherical.phi);
+                camera.position.z = camSpherical.radius * Math.sin(camSpherical.phi) * Math.cos(camSpherical.theta);
+                camera.lookAt(0, 0.2, 0);
+              }
+
+              function initThreeJS() {
+                const container = document.getElementById('three-canvas-container');
+                if (!container || typeof THREE === 'undefined') return;
+                const w = container.clientWidth || 800, h = container.clientHeight || 420;
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
+                updateCameraPosition();
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setSize(w, h);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                container.innerHTML = '';
+                container.appendChild(renderer.domElement);
+                scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+                const d1 = new THREE.DirectionalLight(0x38bdf8, 0.9); d1.position.set(6, 10, 8); scene.add(d1);
+                const d2 = new THREE.DirectionalLight(0xf59e0b, 0.55); d2.position.set(-7, -5, -4); scene.add(d2);
+                const grid = new THREE.GridHelper(16, 16, 0x1e293b, 0x0f172a); grid.position.y = -2.4; scene.add(grid);
+
+                const root = new THREE.Group(); scene.add(root);
+                const linerGeo = new THREE.CylinderGeometry(1.05, 1.05, 4.6, 36, 1, true); linerGeo.rotateZ(Math.PI / 2);
+                root.add(new THREE.Mesh(linerGeo, new THREE.MeshPhongMaterial({ color: 0x334155, transparent: true, opacity: 0.28, side: THREE.DoubleSide })));
+
+                const shellGeo = new THREE.CylinderGeometry(1.55, 1.55, 2.6, 36, 1, false, 0, Math.PI * 1.45);
+                shellGeo.rotateZ(Math.PI / 2); shellGeo.rotateX(Math.PI * 0.25);
+                sensorShellMesh = new THREE.Mesh(shellGeo, new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.45, roughness: 0.35, transparent: true, opacity: 0.45, side: THREE.DoubleSide }));
+                root.add(sensorShellMesh);
+
+                const flangeCylGeo = new THREE.CylinderGeometry(1.85, 1.85, 0.24, 32); flangeCylGeo.rotateZ(Math.PI / 2);
+                const flangeMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.7, roughness: 0.3 });
+                [-2.2, 2.2].forEach(xPos => { const fl = new THREE.Mesh(flangeCylGeo, flangeMat); fl.position.x = xPos; root.add(fl); });
+
+                spiralBendMesh = new THREE.Group();
+                const spiralMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.55 });
+                for (let i = 0; i < 2; i++) {
+                  const pts = [];
+                  for (let t = 0; t <= 60; t++) {
+                    const x = -4.2 + (t / 60) * 8.4, ang = (t / 60) * Math.PI * 6 + i * Math.PI;
+                    pts.push(new THREE.Vector3(x, Math.sin(ang) * 0.85, Math.cos(ang) * 0.85));
+                  }
+                  spiralBendMesh.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 64, 0.04, 8, false), spiralMat));
+                }
+                spiralBendMesh.visible = false; root.add(spiralBendMesh);
+
+                const coilMat = new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.65, roughness: 0.25 });
+                const coilGeo = new THREE.TorusGeometry(0.68, 0.14, 16, 32); coilGeo.rotateX(Math.PI / 2);
+                const topCoil = new THREE.Mesh(coilGeo, coilMat); topCoil.position.set(0, 1.18, 0);
+                const botCoil = new THREE.Mesh(coilGeo, coilMat); botCoil.position.set(0, -1.18, 0);
+                root.add(topCoil, botCoil);
+
+                const elecGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.35, 16); elecGeo.rotateX(Math.PI / 2);
+                const eMat = new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x059669, emissiveIntensity: 0.5 });
+                const e1 = new THREE.Mesh(elecGeo, eMat); e1.position.set(0, 0, 1.12);
+                const e2 = new THREE.Mesh(elecGeo, eMat); e2.position.set(0, 0, -1.12);
+                root.add(e1, e2);
+
+                const epdGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.32, 16);
+                epdElectrodeMesh = new THREE.Mesh(epdGeo, new THREE.MeshStandardMaterial({ color: 0xa855f7, emissive: 0x7e22ce, emissiveIntensity: 0.6 }));
+                epdElectrodeMesh.position.set(0.45, 1.12, 0); root.add(epdElectrodeMesh);
+
+                const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.9, 20), flangeMat); neckMesh.position.set(0, 1.85, 0); root.add(neckMesh);
+                const txGeo = new THREE.CylinderGeometry(0.85, 0.85, 1.35, 28); txGeo.rotateX(Math.PI / 2);
+                const txBody = new THREE.Mesh(txGeo, new THREE.MeshStandardMaterial({ color: 0x0369a1, metalness: 0.35, roughness: 0.4 }));
+                txBody.position.set(0, 2.65, 0); root.add(txBody);
+
+                const fluidGeo = new THREE.CylinderGeometry(0.98, 0.98, 8.8, 32); fluidGeo.rotateZ(Math.PI / 2);
+                fluidMesh = new THREE.Mesh(fluidGeo, new THREE.MeshPhongMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.32 }));
+                root.add(fluidMesh);
+
+                const arrowMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+                for (let ix = -1; ix <= 1; ix++) {
+                  for (let iz = -1; iz <= 1; iz++) {
+                    const grp = new THREE.Group();
+                    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.9, 8), arrowMat);
+                    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.2, 10), arrowMat);
+                    cone.position.y = -0.95; cone.rotation.x = Math.PI;
+                    grp.add(shaft, cone); grp.position.set(ix * 0.45, 0, iz * 0.42);
+                    root.add(grp); fieldArrows.push(grp);
+                  }
+                }
+
+                const pGeo = new THREE.SphereGeometry(0.055, 10, 10);
+                for (let i = 0; i < 100; i++) {
+                  const isBubble = i >= 80;
+                  const p = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({ color: isBubble ? 0xfef08a : (i % 2 === 0 ? 0x22d3ee : 0x38bdf8) }));
+                  p.userData = { baseR: Math.random() * 0.82, baseTheta: Math.random() * Math.PI * 2, x: -4.2 + Math.random() * 8.4, phase: Math.random() * Math.PI * 2, isBubble };
+                  root.add(p); fluidParticles.push(p);
+                }
+
+                const dom = renderer.domElement;
+                dom.addEventListener('pointerdown', e => { isDragging3D = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+                window.addEventListener('pointerup', () => { isDragging3D = false; });
+                window.addEventListener('pointermove', e => {
+                  if (!isDragging3D) return;
+                  camSpherical.theta -= (e.clientX - prevMouse.x) * 0.008;
+                  camSpherical.phi = Math.max(0.25, Math.min(Math.PI - 0.25, camSpherical.phi - (e.clientY - prevMouse.y) * 0.008));
+                  prevMouse = { x: e.clientX, y: e.clientY };
+                  updateCameraPosition();
+                });
+              }
+
+              function drawOscilloscope(tele) {
+                const canvas = document.getElementById('oscilloscope-canvas');
+                if (!canvas) return;
+                const rect = canvas.parentElement.getBoundingClientRect();
+                if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+                  canvas.width = Math.floor(rect.width) || 600; canvas.height = Math.floor(rect.height) || 176;
+                }
+                const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+                ctx.clearRect(0, 0, w, h);
+                ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+                for (let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+                for (let y = 0; y < h; y += 35) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+                const coilFault = tele.activeFault && tele.activeFault.code === '#321';
+                const ampFault = tele.activeFault && tele.activeFault.code === '#101';
+                const normV = Math.max(-1, Math.min(1, tele.effectiveV / 10));
+
+                const drawTrace = (color, fn) => {
+                  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+                  for (let x = 0; x < w; x++) { const y = fn(x, clockTime * 2.5 + x * 0.045); if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+                  ctx.stroke();
+                };
+                drawTrace('#fbbf24', (x, t) => 32 - (coilFault ? 0 : (Math.sin(t) >= 0 ? 16 : -16)));
+                drawTrace('#34d399', (x, t) => {
+                  const sq = coilFault ? 0 : (Math.sin(t) >= 0 ? 1 : -1);
+                  const noise = (state.pipeGeo === 'spiral' ? Math.sin(t * 4.3) * 5 : 0) + (state.pipeGeo === 'bubbles' ? Math.sin(t * 11.7) * 9 : 0);
+                  return 82 - (sq * normV * 20) + noise;
+                });
+                drawTrace('#22d3ee', (x, t) => 125 - (normV * 20 * (ampFault ? 1.45 * Math.sin(t * 0.5) : 1.0)));
+                drawTrace('#c084fc', (x, t) => 156 - (tele.freqHz > 1 ? (Math.sin(t * 3) > 0 ? 7 : -7) : 0) + Math.sin(t * 12) * 2.5);
+              }
+
+              function animateLoop() {
+                animId = requestAnimationFrame(animateLoop);
+                clockTime += 0.035;
+                const tele = computeTelemetry();
+                if (tele.totalizerCounting && Math.abs(tele.flowM3h) > 0.01) state.totalizer += (Math.abs(tele.flowM3h) / 3600) * 0.03;
+                if (fluidMesh) {
+                  fluidMesh.visible = state.fillLevel > 2;
+                  const fillRatio = state.fillLevel / 100;
+                  fluidMesh.scale.y = Math.max(0.05, fillRatio);
+                  fluidMesh.position.y = -0.98 * (1 - fillRatio);
+                }
+                if (spiralBendMesh) spiralBendMesh.visible = (state.pipeGeo === 'spiral');
+                const coilFault = tele.activeFault && tele.activeFault.code === '#321';
+                const bSign = Math.sin(clockTime * 1.6) >= 0 ? 1 : -1;
+                fieldArrows.forEach(arr => { arr.visible = !coilFault; arr.scale.y = bSign; });
+                const maxY = -0.95 + (state.fillLevel / 100) * 1.9;
+                fluidParticles.forEach(p => {
+                  const u = p.userData;
+                  if (state.fillLevel <= 2 || (u.isBubble && state.pipeGeo !== 'bubbles')) { p.visible = false; return; }
+                  u.x += tele.effectiveV * 0.022;
+                  if (u.x > 4.2) u.x = -4.2; if (u.x < -4.2) u.x = 4.2;
+                  const ang = state.pipeGeo === 'spiral' ? (u.baseTheta + u.x * 1.6 + clockTime * 2.0) : u.baseTheta;
+                  const y = Math.sin(ang) * u.baseR, z = Math.cos(ang) * u.baseR;
+                  p.visible = y <= maxY;
+                  p.position.set(u.x, y, z);
+                });
+                if (renderer && scene && camera) renderer.render(scene, camera);
+                drawOscilloscope(tele);
+              }
+
+              function syncUI() {
+                if (state.isBooting) return;
+                const tele = computeTelemetry();
+                const signStr = tele.flowM3h >= 0 ? '+' : '';
+                document.getElementById('hdr-flow').textContent = `${signStr}${tele.flowM3h.toFixed(2)} m³/h`;
+                document.getElementById('hdr-emf').textContent = `${tele.emfMicroV >= 0 ? '+' : ''}${tele.emfMicroV.toFixed(1)} µV`;
+                document.getElementById('hdr-ma').textContent = `${tele.currentMa.toFixed(2)} mA`;
+                document.getElementById('hdr-status-text').textContent = tele.activeFault ? `${tele.activeFault.code}: ${tele.activeFault.lcdLine1}` : 'SYSTEM OK (بدون خطا)';
+                document.getElementById('physics-formula-live').textContent = `U = ${tele.B.toFixed(4)} T × ${tele.dMeters.toFixed(3)} m × ${tele.effectiveV.toFixed(2)} m/s = ${tele.emfMicroV.toFixed(1)} µV`;
+                document.getElementById('sig-coil-curr').textContent = (tele.activeFault && tele.activeFault.code === '#321') ? '0.0 mA (#321)' : '±85.0 mA';
+                document.getElementById('sig-e1e2').textContent = `${tele.emfMicroV.toFixed(1)} µV`;
+                document.getElementById('sig-noise').textContent = `${tele.noisePct.toFixed(1)} %`;
+                document.getElementById('sig-totalizer').textContent = `${state.totalizer.toFixed(2)} m³`;
+                document.getElementById('sig-io-ma').textContent = `${tele.currentMa.toFixed(2)} mA`;
+                document.getElementById('sig-io-freq').textContent = `${tele.freqHz.toFixed(1)} Hz`;
+
+                const lcdBox = document.getElementById('main-lcd-box');
+                const lcdL1 = document.getElementById('lcd-line-1');
+                const lcdL2Left = document.getElementById('lcd-line-2-left');
+                if (tele.activeFault && state.lcdMenuIndex === 0) {
+                  lcdBox.classList.toggle('fault-flash', tele.activeFault.severity === 'FAULT');
+                  lcdL1.textContent = tele.activeFault.lcdLine1;
+                  lcdL2Left.textContent = tele.activeFault.lcdLine2;
+                } else {
+                  lcdBox.classList.remove('fault-flash');
+                  lcdL1.textContent = `${signStr}${tele.flowM3h.toFixed(2)} m³/h`;
+                  lcdL2Left.textContent = `∑ ${state.totalizer.toFixed(1)} m³`;
+                }
+
+                if (tele.activeFault) {
+                  document.getElementById('err-lcd-line1').textContent = tele.activeFault.lcdLine1;
+                  document.getElementById('err-lcd-line2').textContent = tele.activeFault.lcdLine2;
+                  document.getElementById('err-detail-title').textContent = tele.activeFault.title;
+                  document.getElementById('err-detail-code').textContent = tele.activeFault.code;
+                  document.getElementById('err-detail-cause').textContent = tele.activeFault.cause;
+                  document.getElementById('err-detail-remedy').textContent = tele.activeFault.remedy;
+                  document.getElementById('err-detail-ics').textContent = tele.activeFault.ics.join(' , ').toUpperCase();
+                } else {
+                  document.getElementById('err-lcd-line1').textContent = `SYSTEM OK (${signStr}${tele.flowM3h.toFixed(2)} m³/h)`;
+                  document.getElementById('err-lcd-line2').textContent = '→ OPERATION (NO ACTIVE ERRORS)';
+                }
+                document.getElementById('err-out-current').textContent = `${tele.currentMa.toFixed(2)} mA`;
+                document.getElementById('err-out-pulse').textContent = `${tele.freqHz.toFixed(1)} Hz`;
+                document.getElementById('err-out-status').textContent = tele.statusConductive ? 'Conductive (وصل)' : 'Non-Conductive (آلارم)';
+
+                document.querySelectorAll('.pcb-hotspot').forEach(spot => {
+                  const icId = spot.getAttribute('data-ic-id');
+                  spot.classList.toggle('fault-target', Boolean(tele.activeFault && tele.activeFault.ics.includes(icId)));
+                });
+              }
+
+              function selectIC(icId) {
+                const ic = PCB_ICS.find(x => x.id === icId) || PCB_ICS[0];
+                state.selectedIcId = ic.id;
+                document.getElementById('amp-board-map-wrapper').classList.toggle('hidden', ic.board === 'IO');
+                document.getElementById('io-board-map-wrapper').classList.toggle('hidden', ic.board !== 'IO');
+                document.querySelectorAll('.pcb-hotspot').forEach(el => el.classList.toggle('active', el.getAttribute('data-ic-id') === ic.id));
+                document.getElementById('ic-card-section-badge').textContent = ic.section;
+                document.getElementById('ic-card-title').textContent = ic.name;
+                document.getElementById('ic-card-pkg').textContent = ic.pkg;
+                document.getElementById('ic-card-role').textContent = ic.role;
+                document.getElementById('ic-card-pins').textContent = ic.pins;
+                document.getElementById('ic-card-faults').textContent = ic.faults;
+                document.getElementById('ic-card-test').textContent = ic.test;
+                document.getElementById('ic-card-equiv').textContent = ic.equiv;
+              }
+
+              function renderPcbHotspots() {
+                const layer = document.getElementById('pcb-hotspots-layer');
+                const ioGrid = document.getElementById('io-board-blocks-grid');
+                const chips = document.getElementById('ic-quick-chips');
+                layer.innerHTML = ''; ioGrid.innerHTML = ''; chips.innerHTML = '';
+                PCB_ICS.forEach(ic => {
+                  const chip = document.createElement('button');
+                  chip.className = 'px-2 py-1 rounded-lg text-[11px] mono border bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700';
+                  chip.textContent = ic.id.toUpperCase();
+                  chip.onclick = () => selectIC(ic.id);
+                  chips.appendChild(chip);
+                  if (ic.board === 'AMP' && ic.rect) {
+                    const spot = document.createElement('div');
+                    const secClass = ic.section === 'SECTION 1' ? 'sec-1-spot' : (ic.section === 'SECTION 2' ? 'sec-2-spot' : 'sec-3-spot');
+                    spot.className = `pcb-hotspot ${secClass}`;
+                    spot.setAttribute('data-ic-id', ic.id);
+                    spot.style.left = `${ic.rect.left}%`; spot.style.top = `${ic.rect.top}%`;
+                    spot.style.width = `${ic.rect.width}%`; spot.style.height = `${ic.rect.height}%`;
+                    spot.innerHTML = `<span class="px-1 py-0.5 rounded bg-slate-950/85 text-[10px] font-bold text-white mono">${ic.id.toUpperCase().slice(0,8)}</span>`;
+                    spot.onclick = () => selectIC(ic.id);
+                    layer.appendChild(spot);
+                  } else if (ic.board === 'IO') {
+                    const card = document.createElement('div');
+                    card.className = 'p-3 rounded-xl bg-slate-950/90 hover:bg-slate-900 border border-emerald-500/40 cursor-pointer space-y-1';
+                    card.innerHTML = `<div class="text-xs font-bold text-emerald-300">${ic.name}</div><p class="text-[11px] text-slate-400">${ic.role}</p>`;
+                    card.onclick = () => selectIC(ic.id);
+                    ioGrid.appendChild(card);
+                  }
+                });
+                selectIC(state.selectedIcId);
+              }
+
+              function renderErrorList(filterCat = 'ALL', query = '') {
+                const container = document.getElementById('error-list-container');
+                container.innerHTML = '';
+                const q = query.trim().toLowerCase();
+                ERROR_DB.filter(err => (filterCat === 'ALL' || err.cat === filterCat) && (!q || err.code.toLowerCase().includes(q) || err.title.toLowerCase().includes(q) || err.lcdLine1.toLowerCase().includes(q))).forEach(err => {
+                  const card = document.createElement('div');
+                  const isSel = state.activeFaultCode === err.code;
+                  card.className = `p-3 rounded-xl border cursor-pointer flex flex-col gap-1 ${isSel ? 'bg-cyan-950/50 border-cyan-400' : 'bg-slate-950/80 border-slate-800'}`;
+                  card.innerHTML = `<div class="flex items-center justify-between"><span class="font-bold text-xs text-white">${err.code} — ${err.title}</span><span class="mono text-xs text-cyan-300">${err.lcdLine1}</span></div><p class="text-xs text-slate-400">${err.cause}</p>`;
+                  card.onclick = () => {
+                    state.activeFaultCode = isSel ? null : err.code;
+                    renderErrorList(filterCat, query);
+                    syncUI();
+                  };
+                  container.appendChild(card);
+                });
+              }
+
+              function renderHexAndChecklist() {
+                document.getElementById('eeprom-pages-tbody').innerHTML = EEPROM_PAGES.map(r => `<tr><td class="p-2 mono font-bold text-cyan-400">${r.page}</td><td class="p-2 mono text-amber-300">${r.hdr}</td><td class="p-2 mono text-slate-200 text-[11px]">${r.data}</td><td class="p-2 text-slate-300">${r.desc}</td></tr>`).join('');
+                document.getElementById('repair-checklist-container').innerHTML = REPAIR_CHECKLIST.map(g => `<div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2"><div class="font-bold text-cyan-400 text-xs">${g.step}</div>${g.items.map(it => `<label class="flex items-start gap-2 cursor-pointer text-slate-300"><input type="checkbox" class="repair-chk-item mt-1" /><span>${it}</span></label>`).join('')}</div>`).join('');
+              }
+
+              window.addEventListener('load', () => {
+                renderRealisticPcbImage();
+                renderPcbHotspots();
+                renderErrorList();
+                renderHexAndChecklist();
+                initThreeJS();
+                syncUI();
+                animateLoop();
+
+                document.querySelectorAll('.tab-nav-btn').forEach(btn => {
+                  btn.onclick = () => {
+                    const target = btn.getAttribute('data-target');
+                    ['view-sim3d','view-errors','view-pcb','view-hex'].forEach(id => document.getElementById(id).classList.toggle('hidden', id !== target));
+                    document.querySelectorAll('.tab-nav-btn').forEach(b => b.className = b === btn ? 'tab-nav-btn px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold bg-cyan-600 text-white shadow' : 'tab-nav-btn px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-semibold bg-slate-800 text-slate-300');
+                  };
+                });
+                document.getElementById('cam-btn-iso').onclick = () => { camSpherical = { radius: 8.8, theta: 0.65, phi: 1.15 }; updateCameraPosition(); };
+                document.getElementById('cam-btn-cross').onclick = () => { camSpherical = { radius: 6.5, theta: 1.57, phi: 1.52 }; updateCameraPosition(); };
+                document.getElementById('cam-btn-side').onclick = () => { camSpherical = { radius: 8.5, theta: 0.02, phi: 1.48 }; updateCameraPosition(); };
+                document.getElementById('cam-btn-top').onclick = () => { camSpherical = { radius: 8.2, theta: 0.3, phi: 0.35 }; updateCameraPosition(); };
+                document.getElementById('toggle-cutaway-btn').onclick = (e) => { state.cutaway = !state.cutaway; if (sensorShellMesh) sensorShellMesh.material.opacity = state.cutaway ? 0.45 : 0.96; e.currentTarget.textContent = `شفاف‌سازی بدنه: ${state.cutaway ? 'فعال' : 'غیرفعال'}`; };
+                document.getElementById('slider-velocity').oninput = (e) => { state.velocity = parseFloat(e.target.value); document.getElementById('val-velocity').textContent = `${state.velocity >= 0 ? '+' : ''}${state.velocity.toFixed(2)} m/s`; syncUI(); };
+                document.getElementById('slider-fill').oninput = (e) => { state.fillLevel = parseInt(e.target.value, 10); document.getElementById('val-fill').textContent = `${state.fillLevel} %`; syncUI(); };
+                document.querySelectorAll('.fill-preset-btn').forEach(b => b.onclick = () => { const v = parseInt(b.getAttribute('data-fill'), 10); state.fillLevel = v; document.getElementById('slider-fill').value = v; document.getElementById('val-fill').textContent = `${v} %`; syncUI(); });
+                document.getElementById('select-epd-mode').onchange = (e) => { state.epdMode = e.target.value; syncUI(); };
+                document.querySelectorAll('.geo-mode-btn').forEach(b => b.onclick = () => { state.pipeGeo = b.getAttribute('data-geo'); syncUI(); });
+                document.getElementById('slider-cond').oninput = (e) => { state.conductivity = parseInt(e.target.value, 10); document.getElementById('val-cond').textContent = `${state.conductivity} µS/cm`; syncUI(); };
+                document.getElementById('select-dn').onchange = (e) => { state.dn = parseInt(e.target.value, 10); syncUI(); };
+                document.getElementById('btn-clear-faults').onclick = () => { state.activeFaultCode = null; state.fillLevel = 100; state.conductivity = 500; renderErrorList(); syncUI(); };
+                document.getElementById('btn-jump-to-pcb').onclick = () => { const tele = computeTelemetry(); const ic = (tele.activeFault && tele.activeFault.ics[0]) || 'hd64f3048'; document.getElementById('tab-btn-pcb').click(); selectIC(ic); };
+                document.getElementById('subtab-amp-board').onclick = () => selectIC('hd64f3048');
+                document.getElementById('subtab-io-board').onclick = () => selectIC('io_dac_420');
+                document.getElementById('btn-toggle-hotspots').onclick = () => { state.showHotspots = !state.showHotspots; document.getElementById('pcb-hotspots-layer').classList.toggle('hidden', !state.showHotspots); };
+                document.getElementById('select-failsafe-mode').onchange = (e) => { state.failsafeMode = e.target.value; syncUI(); };
+                document.getElementById('error-search-input').oninput = (e) => renderErrorList('ALL', e.target.value);
+                document.querySelectorAll('.err-cat-btn').forEach(b => b.onclick = () => renderErrorList(b.getAttribute('data-cat'), document.getElementById('error-search-input').value));
+              });
+            </script>
+          </body>
+          </html>
+          HTML_EOF
+            sed -i "s|__U_TW__|$U_TW|g" build_apk/assets/index.html
+            sed -i "s|__U_TH__|$U_TH|g" build_apk/assets/index.html
+            sed -i "s|__U_FN__|$U_FN|g" build_apk/assets/index.html
+          fi
+
+          cat << EOF > build_apk/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="$U_SCH"
+              package="com.promag50.simulator"
+              android:versionCode="1"
+              android:versionName="2.04.00">
+              <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="33" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <application
+                  android:label="شبیه‌ساز Promag 50"
+                  android:hardwareAccelerated="true"
+                  android:usesCleartextTraffic="true"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:hardwareAccelerated="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > build_apk/src/com/promag50/simulator/MainActivity.java
+          package com.promag50.simulator;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.Window;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.graphics.Color;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  requestWindowFeature(Window.FEATURE_NO_TITLE);
+                  webView = new WebView(this);
+                  webView.setBackgroundColor(Color.parseColor("#090e1a"));
+                  webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                  WebSettings s = webView.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setAllowFileAccess(true);
+                  s.setAllowContentAccess(true);
+                  s.setLoadWithOverviewMode(true);
+                  s.setUseWideViewPort(true);
+                  s.setBuiltInZoomControls(true);
+                  s.setDisplayZoomControls(false);
+                  s.setTextZoom(100);
+                  s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  webView.setWebChromeClient(new WebChromeClient());
+                  webView.setWebViewClient(new WebViewClient());
+                  String assetUrl = "fi" + "le:///android_asset/index.html";
+                  webView.loadUrl(assetUrl);
+                  setContentView(webView);
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+          javac -source 1.8 -target 1.8 -bootclasspath "$ANDROID_JAR" -d build_apk/obj build_apk/src/com/promag50/simulator/MainActivity.java
+          "$D8" --lib "$ANDROID_JAR" --output build_apk/ build_apk/obj/com/promag50/simulator/MainActivity.class
+          "$AAPT" package -f -M build_apk/AndroidManifest.xml -A build_apk/assets -I "$ANDROID_JAR" -F build_apk/unaligned.apk
+          (cd build_apk && "$AAPT" add unaligned.apk classes.dex)
+          "$ZIPALIGN" -f 4 build_apk/unaligned.apk build_apk/aligned.apk
+          keytool -genkeypair -v -keystore build_apk/release.keystore -alias promag50 -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Android, OU=App, O=Promag50, L=City, S=State, C=US"
+          "$APKSIGNER" sign --ks build_apk/release.keystore --ks-pass pass:123456 --key-pass pass:123456 --out Promag50-Simulator.apk build_apk/aligned.apk
+          ls -lh Promag50-Simulator.apk
+
+      - name: Upload Promag50-Simulator.apk Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Promag50-Simulator-APK
+          path: Promag50-Simulator.apk
